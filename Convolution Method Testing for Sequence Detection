@@ -1,0 +1,125 @@
+%convolution testing
+load('example_position_34990_IL5.mat');
+x = x(:); y = y(:); t = t(:); reward_time_ms = reward_time_ms(:);
+
+max_frame = min(1500, length(x));
+x = x(1:max_frame); y = y(1:max_frame); t = t(1:max_frame);
+reward_time_ms = reward_time_ms(reward_time_ms <= t(end));
+
+buffer = 20;
+top = abs(x) < buffer & y > buffer;
+center = abs(x) < buffer & abs(y) < buffer;
+bottom = abs(x) < buffer & y < -buffer;
+left = x < -buffer & abs(y) < 75;
+right = x > buffer & abs(y) < 75;
+
+path_vector = zeros(length(x), 1);
+path_vector(center) = 1;
+path_vector(top) = 2;
+path_vector(bottom) = -2;
+path_vector(left) = 3;
+path_vector(right) = -3;
+
+abs_path_vector = abs(path_vector);
+
+
+%{
+path_transition_vector = zeros(length(x)-1, 1);
+path_transition_vector(center(1:end-1) & top(2:end)) = 1;
+path_transition_vector(center(1:end-1) & bottom(2:end)) = 2;
+path_transition_vector(top(1:end-1) & left(2:end)) = 3;
+path_transition_vector(top(1:end-1) & right(2:end)) = 4;
+path_transition_vector(bottom(1:end-1) & left(2:end)) = 5;
+path_transition_vector(bottom(1:end-1) & right(2:end)) = 6;
+path_transition_vector(left(1:end-1) & top(2:end)) = 7;
+path_transition_vector(left(1:end-1) & bottom(2:end)) = 8;
+path_transition_vector(right(1:end-1) & top(2:end)) = 9;
+path_transition_vector(right(1:end-1) & bottom(2:end)) = 10;
+path_transition_vector(bottom(1:end-1) & center(2:end)) = 11;
+path_transition_vector(top(1:end-1) & center(2:end)) = 12;
+%}
+
+transition_indices = find(path_transition_vector > 0);
+transition_sequence = path_transition_vector(transition_indices);
+
+
+max_gap = 2;  
+
+patterns = {
+    'LeftSequence',     [1 3 1], [1 0 0];
+    'RightSequence',    [1 -3 1], [0 1 0];
+    %{'BottomLeft',  [1 -2 3 2 1], [0 0 1];
+    %{'BottomRight', [1 -2 -3 2 1], [1 0 1];
+    
+};
+
+% convolution method 2
+pathvec_smooth = round(conv(path_vector, ones(10,1)/10, 'same'));
+
+
+% convolution method 1
+window_size = 10;
+half = floor(window_size / 2); %determine extent of window on either side of a frame
+smooth_path = path_vector;
+for i = 1:length(path_vector)
+    idx_start = max(1, i - half);
+    idx_end = min(length(path_vector), i + half);
+    
+    current_window_vals = path_vector(idx_start:idx_end);
+    
+    % removes zeros
+    non_zero_vals = current_window_vals(current_window_vals ~= 0);
+    
+    %checks for valid zone values
+    if ~isempty(non_zero_vals)
+        u = unique(non_zero_vals); %if a zone value has occurred
+        c = histc(non_zero_vals, u); %how many times this zone value has occurred
+        [~, max_idx] = max(c); %index of the zone values
+        smooth_path_vector(i) = u(max_idx); %assigns smooth path factor to the most frequent zone value
+    else
+        smooth_path_vector(i) = 0; 
+    end
+end
+
+
+
+figure; hold on;
+h_full = plot3(x, y, t, 'k:', 'LineWidth', 1.2);
+h_legend = gobjects(size(patterns,1)+1,1);
+h_legend(1) = h_full;
+
+for i = 1:size(patterns,1)
+    label = patterns{i,1};
+    pattern = patterns{i,2};
+    color = patterns{i,3};
+    match_idxs = find_fuzzy_pattern(transition_sequence, pattern, max_gap);
+
+    for j = 1:length(match_idxs)
+        if match_idxs(j) + 4 <= length(transition_indices)
+            start_frame = transition_indices(match_idxs(j));
+            end_frame = transition_indices(match_idxs(j)+4);
+            traj_idx = start_frame:end_frame;
+
+            plot3(x(traj_idx), y(traj_idx), t(traj_idx), '-', 'Color', color, 'LineWidth', 2, 'HandleVisibility','off');
+            scatter3(x(traj_idx(1)), y(traj_idx(1)), t(traj_idx(1)), 50, color, 'filled', 'o', 'HandleVisibility','off');
+            scatter3(x(traj_idx(end)), y(traj_idx(end)), t(traj_idx(end)), 50, color, 'x', 'HandleVisibility','off');
+        end
+    end
+
+    h_legend(i+1) = plot3(NaN, NaN, NaN, '-', 'Color', color, 'LineWidth', 2, 'DisplayName', label);
+end
+
+reward_frame_indices = zeros(size(reward_time_ms));
+for i = 1:length(reward_time_ms)
+    [~, reward_frame_indices(i)] = min(abs(t - reward_time_ms(i)));
+end
+
+scatter3(x(reward_frame_indices), y(reward_frame_indices), t(reward_frame_indices), ...
+    120, [1 0.843 0], 'p', 'filled', 'DisplayName', 'Reward');
+h_reward = plot3(NaN, NaN, NaN, 'p', 'Color', [1 0.843 0], ...
+    'MarkerFaceColor', [1 0.843 0], 'MarkerSize', 10, 'DisplayName', 'Reward');
+
+legend([h_legend; h_reward], ['Full Trajectory'; patterns(:,1); "Reward"], 'Location', 'eastoutside');
+xlabel('X Position'); ylabel('Y Position'); zlabel('Time (ms)');
+title('Smooth 3D Trajectories of Full Pattern Sequences with Reward Markers');
+grid on; view(3); axis vis3d; rotate3d on;
