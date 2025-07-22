@@ -1,0 +1,192 @@
+x=x(:);
+y=y(:);
+figure();
+x = x(1:1500);
+y = y(1:1500);
+t = t(1:1500);
+plot3(x, y, t);
+hold on;
+%%
+buffer = 20;
+top = abs(x) < buffer & y > buffer;
+center = abs(x) < buffer & abs(y) < buffer;
+bottom = abs(x) < buffer & y < -buffer;
+left = x < -buffer & abs(y) < 75;
+right = x > buffer & abs(y) < 75;
+
+plot(x(center), y(center), 'r.')
+plot(x(top), y(top), 'g.')
+plot(x(bottom), y(bottom), 'b.')
+plot(x(left), y(left), 'y.')
+plot(x(right), y(right), 'm.')
+
+center2top = center(1:end-1) & top(2:end);
+center2bottom = center(1:end-1) & bottom(2:end);
+
+top2left = top(1:end-1) & left(2:end);
+top2right = top(1:end-1) & right(2:end);
+
+bottom2left = bottom(1:end-1) & left(2:end);
+bottom2right = bottom(1:end-1) & right(2:end);
+
+left2top = left(1:end-1) & top(2:end);
+left2bottom = left(1:end-1) & bottom(2:end);
+
+right2top = right(1:end-1) & top(2:end);
+right2bottom = right(1:end-1) & bottom(2:end);
+
+bottom2center = bottom(1:end-1) & center(2:end);
+top2center = top(1:end-1) & center(2:end);
+
+%%
+path_transition_vector =zeros(length(x)-1, 1);
+path_transition_vector(center2top==true) = 1;
+path_transition_vector(center2bottom==true) = 2;
+path_transition_vector(top2left==true) = 3;
+path_transition_vector(top2right==true) = 4;
+path_transition_vector(bottom2left==true) = 5;
+path_transition_vector(bottom2right==true) = 6;
+path_transition_vector(left2top == true) = 7;
+path_transition_vector(left2bottom == true) = 8;
+path_transition_vector(right2top == true) = 9;
+path_transition_vector(right2bottom == true) = 10;
+path_transition_vector(bottom2center == true) = 11;
+path_transition_vector(top2center == true) = 12;
+
+transition_indices = find(path_transition_vector > 0);
+transition_sequence = path_transition_vector(transition_indices);
+
+seq = [1 3 8 11];
+topleftsequence = transition_sequence(1:end-3) == seq(1) & ...
+    transition_sequence(2:end-2) == seq(2) & ...
+    transition_sequence(3:end-1) == seq(3) & ...
+    transition_sequence(4:end) == seq(4);
+
+seq1 = [1 4 10 11];
+toprightsequence = transition_sequence(1:end-3) == seq1(1) & ...
+    transition_sequence(2:end-2) == seq1(2) & ...
+    transition_sequence(3:end-1) == seq1(3) & ...
+    transition_sequence(4:end) == seq1(4);
+
+seq2 = [2 5 7 12];
+bottomleftsequence = transition_sequence(1:end-3) == seq2(1) & ...
+    transition_sequence(2:end-2) == seq2(2) & ...
+    transition_sequence(3:end-1) == seq2(3) & ...
+    transition_sequence(4:end) == seq2(4);
+
+seq3 = [2 6 9 12];
+bottomrightsequence = transition_sequence(1:end-3) == seq3(1) & ...
+    transition_sequence(2:end-2) == seq3(2) & ...
+    transition_sequence(3:end-1) == seq3(3) & ...
+    transition_sequence(4:end) == seq3(4);
+
+% transition_differences = diff(transition_sequence);
+figure;
+plot(transition_sequence, '-o');
+xlabel('Transition Step');
+ylabel('Transition ID Change');
+title('Transition Difference Sequence');
+
+
+fprintf('Top left sequence occurred %d times\n', sum(topleftsequence));
+fprintf('Top right sequence occurred %d times\n', sum(toprightsequence));
+fprintf('Bottom left sequence occurred %d times\n', sum(bottomleftsequence));
+fprintf('Bottom right sequence occurred %d times\n', sum(bottomrightsequence)); 
+
+
+%%
+
+clear
+load('example_position_34990_IL5.mat');
+x = x(:); y = y(:); t = t(:); reward_time_ms = reward_time_ms(:);
+
+max_frame = length(x);
+x = x(1:max_frame); y = y(1:max_frame); t = t(1:max_frame);
+reward_time_ms = reward_time_ms(reward_time_ms <= t(end));
+
+% Define spatial zones
+buffer = 20;
+top = abs(x) < buffer & y > buffer;
+center = abs(x) < buffer & abs(y) < buffer;
+bottom = abs(x) < buffer & y < -buffer;
+left = x < -buffer & abs(y) < 75;
+right = x > buffer & abs(y) < 75;
+
+% Encode zone path
+path_vector = zeros(length(x), 1);
+path_vector(center) = 1;
+path_vector(top) = 2;
+path_vector(bottom) = -2;
+path_vector(left) = 3;
+path_vector(right) = -3;
+
+% Identify zone transitions
+path_change_idx = find(abs(diff(path_vector)) > 0);
+path_change_vec = path_vector(path_change_idx);
+
+% Define readable pattern names and colors
+patterns = {
+    'Top Left Sequence',     [1 2 3 -2 1], [1 0 0];     % red
+    'Top Right Sequence',    [1 2 -3 -2 1], [0 1 0];    % green
+    'Bottom Left Sequence',  [1 -2 3 2 1], [0 0 1];     % blue
+    'Bottom Right Sequence', [1 -2 -3 2 1], [1 0 1];    % magenta
+};
+
+% Start 3D plot
+figure(); hold on
+
+% Plot full trajectory in dotted black
+plot3(x, y, t, ':', 'Color', 'k', 'LineWidth', 1.2, 'DisplayName', 'Full Trajectory');
+
+% Plot matched pattern segments
+for p = 1:size(patterns, 1)
+    label = patterns{p, 1};
+    pat = patterns{p, 2};
+    color = patterns{p, 3};
+
+    match_indices = [];
+
+    for i = 1:(length(path_change_vec) - length(pat) + 1)
+        window = path_change_vec(i:i+length(pat)-1);
+        if isequal(window(:), pat(:))
+            match_indices(end+1) = i;
+        end
+    end
+
+    fprintf('%s matched at indices: ', label);
+    disp(match_indices);
+
+    for j = 1:length(match_indices)
+        idx_start = path_change_idx(match_indices(j));
+        idx_end = path_change_idx(match_indices(j) + length(pat)-2);
+        traj_idx = idx_start:idx_end;
+
+        if j == 1
+            % Only first instance gets a legend label
+            plot3(x(traj_idx), y(traj_idx), t(traj_idx), '-', ...
+                  'Color', color, 'LineWidth', 2, 'DisplayName', label);
+        else
+            plot3(x(traj_idx), y(traj_idx), t(traj_idx), '-', ...
+                  'Color', color, 'LineWidth', 2, 'HandleVisibility', 'off');
+        end
+
+        % Mark start/end without cluttering legend
+        scatter3(x(idx_start), y(idx_start), t(idx_start), 50, color, 'filled', 'o', 'HandleVisibility', 'off');
+        scatter3(x(idx_end), y(idx_end), t(idx_end), 50, color, 'x', 'HandleVisibility', 'off');
+    end
+end
+
+% Plot reward markers (gold diamonds)
+reward_frame_indices = zeros(size(reward_time_ms));
+for i = 1:length(reward_time_ms)
+    [~, reward_frame_indices(i)] = min(abs(t - reward_time_ms(i)));
+end
+
+scatter3(x(reward_frame_indices), y(reward_frame_indices), t(reward_frame_indices), ...
+    120, [1 0.843 0], 'p', 'filled', 'DisplayName', 'Reward');
+
+% Axis labels and view
+xlabel('X'); ylabel('Y'); zlabel('Time');
+title('Matched Trajectory Patterns with Reward Markers');
+grid on; view(3); axis vis3d;
+legend('show');
